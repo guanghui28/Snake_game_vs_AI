@@ -1,7 +1,9 @@
 class Game {
-    constructor(canvas, ctx) {
+    constructor(canvas, ctx, canvas2, ctx2) {
         this.canvas = canvas;
         this.ctx = ctx;
+        this.canvas2 = canvas2;
+        this.ctx2 = ctx2;
         this.width;
         this.height;
         this.cellSize = 50;
@@ -15,13 +17,29 @@ class Game {
         this.food;
         this.gameObject;
         this.UI = new UI(this);
+        this.soundControl = new Sound(this);
         this.background;
 
         this.eventUpdate = false;
         this.eventTimer = 0;
         this.eventInterval = 200;
         this.gameOver = true;
-        this.winningScore = 2;
+        this.winningScore = 10;
+        this.debug = false;
+        this.timer = 0;
+        this.particles = [];
+        this.numberOfParticles = 50;
+        this.createParticlePool();
+
+        // short key
+        window.addEventListener("keydown", (e) => {
+            // toggle full screen
+            if (e.key === "-") {
+                this.toggleFullScreen();
+            } else if (e.key.toLowerCase() === "=") {
+                this.debug = !this.debug;
+            }
+        });
 
         window.addEventListener("resize", (e) => {
             this.resize(
@@ -37,18 +55,33 @@ class Game {
         this.ctx.fillStyle = "white";
         this.ctx.font = "30px Impact";
         this.ctx.textBaseline = "top";
+
+        this.canvas2.width = this.canvas.width;
+        this.canvas2.height = this.canvas.height;
+        this.ctx2.fillStyle = "gold";
+        this.ctx2.lineWidth = 2;
+
         this.width = this.canvas.width;
         this.height = this.canvas.height;
         this.columns = Math.floor(this.width / this.cellSize);
         this.rows = Math.floor(this.height / this.cellSize);
         this.background = new Background(this);
     }
-    start() {
-        if (!this.gameOver) {
-            this.UI.triggerGameOver();
+    initPlayer1() {
+        const image = this.UI.player1Character.value;
+        const name = this.UI.player1Name.value;
+        if (this.UI.player1Controls.value === "arrows") {
+            this.player1 = new Keyboard1(
+                this,
+                0,
+                this.marginTop,
+                1,
+                0,
+                "orange",
+                name,
+                image
+            );
         } else {
-            this.gameOver = false;
-            this.UI.gamePlayUI();
             this.player1 = new ComputerAi(
                 this,
                 0,
@@ -56,8 +89,27 @@ class Game {
                 1,
                 0,
                 "orange",
-                "Huy"
+                name,
+                image
             );
+        }
+    }
+    initPlayer2() {
+        const image = this.UI.player2Character.value;
+        const name = this.UI.player2Name.value;
+
+        if (this.UI.player1Controls.value === "wsad") {
+            this.player2 = new Keyboard2(
+                this,
+                this.columns - 1,
+                this.marginTop,
+                0,
+                1,
+                "magenta",
+                name,
+                image
+            );
+        } else {
             this.player2 = new ComputerAi(
                 this,
                 this.columns - 1,
@@ -65,26 +117,76 @@ class Game {
                 0,
                 1,
                 "magenta",
-                "Anyone"
+                name,
+                image
             );
-            this.player3 = new ComputerAi(
-                this,
-                this.columns - 1,
-                this.rows - 1,
-                -1,
-                0,
-                "yellow",
-                "AI"
-            );
-            this.player4 = new Keyboard1(
-                this,
-                0,
-                this.rows - 1,
-                0,
-                -1,
-                "red",
-                "Mine"
-            );
+        }
+    }
+    initPlayer3() {
+        const image = this.UI.player3Character.value;
+        const name = this.UI.player3Name.value;
+
+        this.player3 = new ComputerAi(
+            this,
+            this.columns - 1,
+            this.rows - 1,
+            -1,
+            0,
+            "yellow",
+            name,
+            image
+        );
+    }
+    initPlayer4() {
+        const image = this.UI.player4Character.value;
+        const name = this.UI.player4Name.value;
+
+        this.player4 = new ComputerAi(
+            this,
+            0,
+            this.rows - 1,
+            0,
+            -1,
+            "red",
+            name,
+            image
+        );
+    }
+    createParticlePool() {
+        for (let i = 0; i < this.numberOfParticles; i++) {
+            this.particles.push(new Particle(this));
+        }
+    }
+    getParticle() {
+        return this.particles.find((particle) => particle.free);
+    }
+    handleParticles() {
+        this.ctx2.clearRect(0, 0, this.width, this.height);
+        this.particles.forEach((particle) => {
+            particle.draw();
+            particle.update();
+        });
+    }
+
+    toggleFullScreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen();
+        } else {
+            document.exitFullscreen();
+        }
+    }
+    start() {
+        if (!this.gameOver) {
+            this.UI.triggerGameOver();
+            this.soundControl.play(this.soundControl.restart);
+        } else {
+            this.soundControl.play(this.soundControl.start);
+            this.gameOver = false;
+            this.UI.gamePlayUI();
+            this.initPlayer1();
+            this.initPlayer2();
+            this.initPlayer3();
+            this.initPlayer4();
             this.food = new Food(this);
             this.gameObject = [
                 this.player1,
@@ -94,6 +196,7 @@ class Game {
                 this.food,
             ];
             this.ctx.clearRect(0, 0, this.width, this.height);
+            this.timer = 0;
         }
     }
     drawGrid() {
@@ -120,9 +223,10 @@ class Game {
     }
     render(deltaTime) {
         this.handlePeriodicEvents(deltaTime);
+        if (!this.gameOver) this.timer += deltaTime;
         if (this.eventUpdate && !this.gameOver) {
             this.ctx.clearRect(0, 0, this.width, this.height);
-            this.drawGrid();
+            if (this.debug) this.drawGrid();
             this.background.draw();
             this.gameObject.forEach((player) => {
                 player.draw();
@@ -131,6 +235,10 @@ class Game {
             // this.drawStatusText();
             this.UI.update();
         }
+        this.handleParticles();
+    }
+    formattedTimer() {
+        return (this.timer * 0.001).toFixed(1);
     }
     checkCollision(a, b) {
         return a.x === b.x && a.y === b.y;
@@ -162,7 +270,11 @@ window.addEventListener("load", () => {
     const ctx = canvas.getContext("2d");
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-    const game = new Game(canvas, ctx);
+    const ctx2 = canvas2.getContext("2d");
+    canvas2.width = window.innerWidth;
+    canvas2.height = window.innerHeight;
+
+    const game = new Game(canvas, ctx, canvas2, ctx2);
     game.ctx.fillStyle = "blue";
 
     let lastTime = 0;
